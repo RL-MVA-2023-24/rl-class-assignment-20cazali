@@ -2,10 +2,11 @@ import random
 import os
 import numpy as np
 import torch
-
+from gym.wrappers import TimeLimit
 from evaluate import evaluate_HIV, evaluate_HIV_population
 from train import ProjectAgent  # Replace DummyAgent with your agent implementation
-
+from config import CONFIG
+from env_hiv import HIVPatient
 
 def seed_everything(seed: int = 42):
     random.seed(seed)
@@ -21,8 +22,14 @@ def seed_everything(seed: int = 42):
 if __name__ == "__main__":
     seed_everything(seed=42)
     # Initialization of the agent. Replace DummyAgent with your custom agent implementation.
-    agent = ProjectAgent()
-    agent.load()
+    # Declare network
+
+    env = TimeLimit(
+    env=HIVPatient(domain_randomization=False), max_episode_steps=200
+)  # The time wrapper limits the number of steps in an episode at 200.
+# Now 
+    agent = ProjectAgent(CONFIG)
+    agent.load("best_model.pt")
     # Keep the following lines to evaluate your agent unchanged.
     score_agent: float = evaluate_HIV(agent=agent, nb_episode=1)
     score_agent_dr: float = evaluate_HIV_population(agent=agent, nb_episode=15)
