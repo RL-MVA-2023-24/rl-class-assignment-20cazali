@@ -29,7 +29,7 @@ if __name__ == "__main__":
 )  # The time wrapper limits the number of steps in an episode at 200.
 # Now 
     agent = ProjectAgent(CONFIG)
-    agent.load("best_model.pt")
+    agent.load(["best_modelbis_23md.pt"])
     # Keep the following lines to evaluate your agent unchanged.
     score_agent: float = evaluate_HIV(agent=agent, nb_episode=1)
     score_agent_dr: float = evaluate_HIV_population(agent=agent, nb_episode=15)

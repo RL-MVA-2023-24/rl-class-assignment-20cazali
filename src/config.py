@@ -18,7 +18,7 @@ CONFIG = {"nb_actions": env.action_space.n,
           "epsilon_delay_decay": 20,
           "batch_size": 200,
           "target_copy" : True,
-          "nb_neurons": 128,
+          "nb_neurons": 512,
           "update_target_freq" : 100,
           "update_target_strategy":"replace",
           "gradient_steps":5}

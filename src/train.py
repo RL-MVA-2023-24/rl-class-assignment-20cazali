@@ -52,7 +52,7 @@ class ProjectAgent:
         self.epsilon_stop = config['epsilon_decay_period'] if 'epsilon_decay_period' in config.keys() else 1000
         self.epsilon_delay = config['epsilon_delay_decay'] if 'epsilon_delay_decay' in config.keys() else 20
         self.epsilon_step = (self.epsilon_max-self.epsilon_min)/self.epsilon_stop
-        self.model = self.build_network(config['state_dim'], self.nb_actions, config['nb_neurons']) 
+        self.model = self.mlp(config['state_dim'], self.nb_actions, config['nb_neurons']) 
         self.device = "cuda" if next(self.model.parameters()).is_cuda else "cpu"
         self.memory = ReplayBuffer(buffer_size,self.device)
         self.target_model = deepcopy(self.model).to(self.device) if config['target_copy'] else self.build_network(config['state_dim'], self.nb_actions, config['nb_neurons']).to(self.device)
@@ -66,7 +66,7 @@ class ProjectAgent:
         self.update_target_tau = config['update_target_tau'] if 'update_target_tau' in config.keys() else 0.005
         self.monitoring_nb_trials = config['monitoring_nb_trials'] if 'monitoring_nb_trials' in config.keys() else 0
 
-    def build_network(self, state_dim, n_action, nb_neurons):
+    def mlp(self, state_dim, n_action, nb_neurons):
         model = torch.nn.Sequential(torch.nn.Linear(state_dim, nb_neurons),
                                     torch.nn.ReLU(),
                                     torch.nn.Linear(nb_neurons, nb_neurons),
@@ -209,15 +209,29 @@ class ProjectAgent:
         torch.save(self.model.state_dict(), path)
 
     def load(self, path):
-        self.model.load_state_dict(torch.load(path))
+        self.q_function = []
+        for path_ in path:
+            self.model.load_state_dict(torch.load(path_))
+            self.q_function.append(deepcopy(self.model))
 
     def act(self, observation, use_random=False):
         if use_random:
             return np.random.randint(self.nb_actions)
         else:
             with torch.no_grad():
-                return self.greedy_action(self.model, observation)
-    
+                return self.act_ensembling(observation)
+            
+    def act_ensembling(self, observation, use_random=False):
+        actions = 0
+        for q_function in self.q_function:
+            if use_random:
+                return np.random.randint(self.nb_actions)
+            else:
+                with torch.no_grad():
+                    actions +=  q_function(torch.Tensor(observation).unsqueeze(0))
+        return actions.argmax().item()
+
+                
     def greedy_action(self, model, observation):
         with torch.no_grad():
             return model(torch.Tensor(observation).unsqueeze(0)).argmax().item()
