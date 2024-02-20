@@ -2,7 +2,7 @@ import random
 import os
 import numpy as np
 import torch
-from gym.wrappers import TimeLimit
+from gymnasium.wrappers import TimeLimit
 from evaluate import evaluate_HIV, evaluate_HIV_population
 from train import ProjectAgent  # Replace DummyAgent with your agent implementation
 from config import CONFIG
