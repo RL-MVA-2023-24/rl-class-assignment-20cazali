@@ -20,9 +20,9 @@ import torch.nn as nn
 from copy import deepcopy
 from gymnasium.wrappers import TimeLimit
 from torch.distributions.categorical import Categorical
-
-
-
+import random
+import joblib
+from sklearn.ensemble import ExtraTreesRegressor
 # You have to implement your own agent.
 # Don't modify the methods names and signatures, but you can add methods.
 # ENJOY!
@@ -40,9 +40,94 @@ import torch
 import torch.nn as nn
 from copy import deepcopy
 from replay_buffer import ReplayBuffer
+import torch.nn as nn
+
+class MLP(nn.Module):
+    def __init__(self, state_dim, n_action, nb_neurons):
+        super(MLP, self).__init__()
+        self.fc1 = nn.Linear(state_dim, nb_neurons)
+        self.bn1 = nn.BatchNorm1d(nb_neurons,track_running_stats=False)
+        self.relu1 = nn.ReLU()
+        
+        self.fc2 = nn.Linear(nb_neurons, nb_neurons)
+        self.bn2 = nn.BatchNorm1d(nb_neurons,track_running_stats=False)
+        self.relu2 = nn.ReLU()
+        
+        self.fc3 = nn.Linear(nb_neurons, nb_neurons)
+        self.bn3 = nn.BatchNorm1d(nb_neurons,track_running_stats=False)
+        self.relu3 = nn.ReLU()
+        self.dropout = nn.Dropout(p=0.3)
+        self.fc4 = nn.Linear(nb_neurons, n_action)
+
+    def forward(self, x):
+        x = self.fc1(x)
+        x = self.relu1(x)
+        x=self.dropout(x)
+        
+        x = self.fc2(x)
+        x = self.relu2(x)
+        x=self.dropout(x)
+        
+        x = self.fc3(x)
+        x = self.relu3(x)
+        x=self.dropout(x)
+        
+        x = self.fc4(x)
+        return x
+class RNDUncertainty:
+    """ This class uses Random Network Distillation to estimate the uncertainty/novelty of states. """
+    def __init__(self, scale, env, hidden_dim=1024, embed_dim=256, **kwargs):
+        self.scale = scale
+        self.criterion = torch.nn.MSELoss(reduction='none')
+        # YOUR CODE HERE
+        self.target_net = torch.nn.Sequential(torch.nn.Linear(env.observation_space.shape[0], hidden_dim), torch.nn.ReLU(),
+                                           torch.nn.Linear(hidden_dim, hidden_dim), torch.nn.ReLU(),
+                                           torch.nn.Linear(hidden_dim, embed_dim))
+        self.predict_net = torch.nn.Sequential(torch.nn.Linear(env.observation_space.shape[0], hidden_dim), torch.nn.ReLU(),
+                                            torch.nn.Linear(hidden_dim, hidden_dim), torch.nn.ReLU(),
+                                            torch.nn.Linear(hidden_dim, embed_dim))
+        self.optimizer = torch.optim.Adam(self.predict_net.parameters())
+    
+    def error(self, state):
+        """ Computes torche error between torche prediction and target network. """
+        if not isinstance(state, torch.Tensor): state = torch.tensor(state, dtype=torch.float32)
+        if len(state.shape) == 1: state.unsqueeze(dim=0)
+        # YOUR CODE HERE: return torche RND error
+        return self.criterion(self.predict_net(state), self.target_net(state))
+    
+    def observe(self, state, **kwargs):
+        """ Observes state(s) and 'remembers' torchem using Random Network Distillation"""
+        # YOUR CODE HERE
+        self.optimizer.zero_grad()
+        self.error(state).mean().backward()
+        self.optimizer.step()
+    
+    def __call__(self, state, **kwargs):
+        """ Returns the estimated uncertainty for observing a (minibatch of) state(s) as Tensor. """
+        # YOUR CODE HERE
+        return self.scale * self.error(state).mean(dim=-1)
+    
+def greedy_action(Q,s,nb_actions):
+    Qsa = []
+    for a in range(nb_actions):
+        sa = np.append(s,a).reshape(1, -1)
+        Qsa.append(Q.predict(sa))
+    return np.argmax(Qsa)
+
+class ProjectAgentFQ:
+    def load(self, path):
+        self.model = joblib.load(path)
+    
+    def act(self, observation, use_random=False):
+        if use_random:
+            return np.random.randint(self.nb_actions)
+        else:
+            return greedy_action(self.model, observation, env.action_space.n)
+    def save(self, path):
+        joblib.dump(self.model, path)
 
 class ProjectAgent:
-    def __init__(self, config):
+    def __init__(self, config, uncertainty = None):
         self.nb_actions = config['nb_actions']
         self.gamma = config['gamma'] if 'gamma' in config.keys() else 0.95
         self.batch_size = config['batch_size'] if 'batch_size' in config.keys() else 100
@@ -65,6 +150,7 @@ class ProjectAgent:
         self.update_target_freq = config['update_target_freq'] if 'update_target_freq' in config.keys() else 20
         self.update_target_tau = config['update_target_tau'] if 'update_target_tau' in config.keys() else 0.005
         self.monitoring_nb_trials = config['monitoring_nb_trials'] if 'monitoring_nb_trials' in config.keys() else 0
+        self.uncertainty = uncertainty
 
     def mlp(self, state_dim, n_action, nb_neurons):
         model = torch.nn.Sequential(torch.nn.Linear(state_dim, nb_neurons),
@@ -120,6 +206,7 @@ class ProjectAgent:
         if len(self.memory) > self.batch_size:
             X, A, R, Y, D = self.memory.sample(self.batch_size)
             next_action = self.model(Y).argmax(1).unsqueeze(1)
+            R += self.uncertainty(Y).detach()
             QYmax = self.target_model(Y).gather(1, next_action).detach()
             update = torch.addcmul(R.unsqueeze(1), (1-D).unsqueeze(1), QYmax, value=self.gamma)
             QXA = self.model(X).gather(1, A.to(torch.long).unsqueeze(1))
@@ -140,6 +227,7 @@ class ProjectAgent:
         epsilon = self.epsilon_max
         step = 0
         while episode < max_episode:
+            next_states = []
             # update epsilon
             if step > self.epsilon_delay:
                 epsilon = max(self.epsilon_min, epsilon-self.epsilon_step)
@@ -150,6 +238,7 @@ class ProjectAgent:
                 action = self.greedy_action(self.model, state)
             # step
             next_state, reward, done, trunc, _ = env.step(action)
+            next_states.append(next_state)
             self.memory.append(state, action, reward, next_state, done)
             episode_cum_reward += reward
             # train
@@ -169,6 +258,7 @@ class ProjectAgent:
             # next transition
             step += 1
             if done or trunc:
+              self.uncertainty.observe(next_states)
               if episode_cum_reward > best_episode_return:
                 best_episode_return = episode_cum_reward
                 self.save("best_model.pt")
@@ -215,6 +305,7 @@ class ProjectAgent:
             self.q_function.append(deepcopy(self.model))
 
     def act(self, observation, use_random=False):
+
         if use_random:
             return np.random.randint(self.nb_actions)
         else:
@@ -228,8 +319,14 @@ class ProjectAgent:
                 return np.random.randint(self.nb_actions)
             else:
                 with torch.no_grad():
-                    actions +=  q_function(torch.Tensor(observation).unsqueeze(0))
-        return actions.argmax().item()
+                    q_function.eval()
+                    action_q = q_function(torch.Tensor(observation).unsqueeze(0))
+                    action_q_normalized = (action_q - action_q.mean())/action_q.std()
+                    actions +=  action_q_normalized
+        if np.random.random()<-1:
+            return np.random.randint(self.nb_actions)
+        else:
+            return actions.argmax().item()
 
                 
     def greedy_action(self, model, observation):

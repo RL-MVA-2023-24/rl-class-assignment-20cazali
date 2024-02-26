@@ -4,10 +4,10 @@ import numpy as np
 import torch
 from gymnasium.wrappers import TimeLimit
 from evaluate import evaluate_HIV, evaluate_HIV_population
-from train import ProjectAgent  # Replace DummyAgent with your agent implementation
+from train import ProjectAgent, ProjectAgentFQ  # Replace DummyAgent with your agent implementation
 from config import CONFIG
 from env_hiv import HIVPatient
-
+from train import RNDUncertainty
 def seed_everything(seed: int = 42):
     random.seed(seed)
     os.environ["PYTHONHASHSEED"] = str(seed)
@@ -20,16 +20,19 @@ def seed_everything(seed: int = 42):
 
 
 if __name__ == "__main__":
-    seed_everything(seed=42)
+    seed_everything(seed=1)
     # Initialization of the agent. Replace DummyAgent with your custom agent implementation.
     # Declare network
 
     env = TimeLimit(
-    env=HIVPatient(domain_randomization=False), max_episode_steps=200
-)  # The time wrapper limits the number of steps in an episode at 200.
-# Now 
-    agent = ProjectAgent(CONFIG)
-    agent.load(["best_modelbis_23md.pt"])
+    env=HIVPatient(domain_randomization=False), max_episode_steps=200)
+    #uncertainty = RNDUncertainty(400, env)
+    # agent = ProjectAgent(CONFIG, uncertainty)
+    # agent.train(env, 10)
+    agent = ProjectAgentFQ()
+    agent.load("best_et_modelbis.joblib")
+    # agent.load(["best_model_batchnorm_25md.pt"])#,)"best_modelbis_25.pt","best_model_norandom_19md.pt","best_model_pretrain_no_random_34md.pt"]) #"best_model_prerandom_1_7.pt"]) #best_modelbis_25.pt", 
+
     # Keep the following lines to evaluate your agent unchanged.
     score_agent: float = evaluate_HIV(agent=agent, nb_episode=1)
     score_agent_dr: float = evaluate_HIV_population(agent=agent, nb_episode=15)
