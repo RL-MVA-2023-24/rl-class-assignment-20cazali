@@ -2,24 +2,25 @@ from collections import deque
 import joblib
 import numpy as np
 from sklearn.ensemble import ExtraTreesRegressor
+from env_hiv import HIVPatient
+from gymnasium.wrappers import TimeLimit
+
 def greedy_action(Q,s,nb_actions):
     Qsa = []
     for a in range(nb_actions):
         sa = np.append(s,a).reshape(1, -1)
         Qsa.append(Q.predict(sa))
     return np.argmax(Qsa)
+
 class ProjectAgentTrainingFQI:
-
-    def __init__(self, env, horizon, max_length, clf):
-
-        self.model = clf
+    def __init__(self, env, horizon, max_length):
         self.horizon = horizon
         self.max_length = max_length
         self.env = env
         self.Qfunctions = []
         self.best_episode_reward = 0
 
-    def collect_samples(self, max_length, horizon, disable_tqdm=False, print_done_states=False):
+    def collect_samples(self, max_length, horizon):
         s, _ = self.env.reset()
         self.S = deque(maxlen=max_length)
         self.A = deque(maxlen=max_length)
@@ -45,7 +46,7 @@ class ProjectAgentTrainingFQI:
         S = np.array(self.S)
         A = np.array(self.A).reshape(-1,1)
         SA = np.append(S, A, axis=1)
-        for iter in range(n_iter):
+        for _ in range(n_iter):
             if start == True:
                 value=self.R.copy()
             else:
@@ -61,8 +62,8 @@ class ProjectAgentTrainingFQI:
             Q.fit(SA, value)
             self.Qfunctions.append(Q)
 
-            cum_reward = self.evaluate(self.env, Q, disable_tqdm=True)
-            print(f"{iter} - Cumulative reward: {cum_reward:,.2f}")
+            cum_reward = self.evaluate(self.env, Q)
+            print("reward = ", cum_reward)
 
         return self.Qfunctions
 
@@ -70,7 +71,7 @@ class ProjectAgentTrainingFQI:
         self.collect_samples(self.max_length, size_start)
         self.fit_q(n_iter, gamma= gamma, start = True)
         for _ in range(nb_steps):
-            self.update_buffer_val(self.horizon, self.env, epsilon)
+            self.online_buffer(self.horizon, self.env, epsilon)
             print(len(self.S), self.S[0].shape)
             self.fit_q(n_iter, gamma = gamma, start = False)
             ep_reward = self.evaluate(self.env, self.Qfunctions[-1], 1)[0]
@@ -80,31 +81,17 @@ class ProjectAgentTrainingFQI:
                 joblib.dump(self.Qfunctions[-1], 'best_et_model.joblib')
 
     def resume_train(self,nb_steps, n_iter, gamma, epsilon=0.20):
-        for episode in range(nb_steps):
-            self.update_buffer_val(self.horizon, self.env, epsilon)
-            print(len(self.S), self.S[0].shape)
+        for _ in range(nb_steps):
+            self.online_buffer(self.horizon, self.env, epsilon)
             self.fit_q(n_iter, gamma = gamma, start = False)
-            ep_reward = self.evaluate(self.env, self.Qfunctions[-1], 1)[0]
+            ep_reward = self.evaluate(self.env, self.Qfunctions[-1])
 
             if ep_reward > self.best_episode_reward:
                 self.best_episode_reward = ep_reward
                 joblib.dump(self.Qfunctions[-1], 'best_et_model.joblib')
         return self.Qfunctions
-
-    def evaluate(self, env, Qfunction, disable_tqdm=False):
-        s, _ = env.reset()
-        cum_reward = 0
-        for t in range(200):
-            a = greedy_action(Qfunction, s, env.action_space.n)
-            s2, r, d, trunc, _ = env.step(a)
-            s = s2
-            cum_reward += r
-            if d or trunc:
-                break
-        return cum_reward
-
-
-    def update_buffer_val(self, horizon, env, disable_tqdm=False, epsilon=0.2):
+    
+    def online_buffer(self, horizon, env, epsilon=0.2):
         state, _ = env.reset()
         for _ in range(horizon):
             if np.random.rand() < epsilon:
@@ -122,3 +109,26 @@ class ProjectAgentTrainingFQI:
                 state, _ = env.reset()
             else:
                 state = next_state
+
+    def evaluate(self, env, Qfunction):
+        s, _ = env.reset()
+        cum_reward = 0
+        for _ in range(200):
+            a = greedy_action(Qfunction, s, env.action_space.n)
+            s2, r, d, trunc, _ = env.step(a)
+            s = s2
+            cum_reward += r
+            if d or trunc:
+                break
+        return cum_reward
+    
+
+if __name__ == "__main__":
+    gamma = 0.98
+    nb_iter = 1
+    n_steps = 100
+    horizon = 2000
+    max_length = 40000
+    env = TimeLimit(env=HIVPatient(domain_randomization=False), max_episode_steps=200)
+    agent= ProjectAgentTrainingFQI(env, horizon, max_length)
+    agent.train(n_steps, nb_iter, gamma, size_start = 5000, epsilon=0.10)

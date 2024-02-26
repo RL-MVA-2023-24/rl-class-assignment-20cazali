@@ -8,24 +8,15 @@ env = TimeLimit(
 # Now is the floor is yours to implement the agent and train it.
 
 
-# You have to implement your own agent.
-# Don't modify the methods names and signatures, but you can add methods.
-# ENJOY!
-
-# %load solutions/dqn_agent.py
-# %load solutions/dqn_agent.py
 import numpy as np
 import torch
 import torch.nn as nn
 from copy import deepcopy
 from gymnasium.wrappers import TimeLimit
-from torch.distributions.categorical import Categorical
 import random
 import joblib
 from sklearn.ensemble import ExtraTreesRegressor
-# You have to implement your own agent.
-# Don't modify the methods names and signatures, but you can add methods.
-# ENJOY!
+
 from gymnasium.wrappers import TimeLimit
 from torch.distributions.categorical import Categorical
 
@@ -117,6 +108,7 @@ def predict_state_action(Q, state, nb_actions):
         sa = np.append(state,a).reshape(1, -1)
         Qsa.append(Q.predict(sa))
     return Qsa
+
 class ProjectAgentFQ:
     def __init__(self, env) -> None:
         self.nb_actions = env.action_space.n
@@ -165,28 +157,14 @@ class ProjectAgent:
         self.monitoring_nb_trials = config['monitoring_nb_trials'] if 'monitoring_nb_trials' in config.keys() else 0
         self.uncertainty = uncertainty
 
-    # def mlp(self, state_dim, n_action, nb_neurons):
-    #     model = torch.nn.Sequential(torch.nn.Linear(state_dim, nb_neurons),
-    #                                 torch.nn.ReLU(),
-    #                                 torch.nn.Linear(nb_neurons, nb_neurons),
-    #                                 torch.nn.ReLU(), 
-    #                                 torch.nn.Linear(nb_neurons, nb_neurons),
-    #                                 torch.nn.ReLU(), 
-    #                                 torch.nn.Linear(nb_neurons, n_action))
-    #     return model
     def mlp(self, state_dim, n_action, nb_neurons):
         model = torch.nn.Sequential(torch.nn.Linear(state_dim, nb_neurons),
-                                    torch.nn.LeakyReLU(),
+                                    torch.nn.ReLU(),
                                     torch.nn.Linear(nb_neurons, nb_neurons),
-                                    torch.nn.LeakyReLU(),
+                                    torch.nn.ReLU(), 
                                     torch.nn.Linear(nb_neurons, nb_neurons),
-                                    torch.nn.LeakyReLU(),
-                                    torch.nn.Linear(nb_neurons, nb_neurons),
-                                    torch.nn.LeakyReLU(),
-                                    torch.nn.Linear(nb_neurons, nb_neurons),
-                                    torch.nn.LeakyReLU(),
-                                    torch.nn.Linear(nb_neurons, n_action),
-                                    )
+                                    torch.nn.ReLU(), 
+                                    torch.nn.Linear(nb_neurons, n_action))
         return model
 
 
