@@ -108,21 +108,34 @@ class RNDUncertainty:
         return self.scale * self.error(state).mean(dim=-1)
     
 def greedy_action(Q,s,nb_actions):
-    Qsa = []
-    for a in range(nb_actions):
-        sa = np.append(s,a).reshape(1, -1)
-        Qsa.append(Q.predict(sa))
+    Qsa = predict_state_action(Q, s, nb_actions)
     return np.argmax(Qsa)
 
+def predict_state_action(Q, state, nb_actions):
+    Qsa = []
+    for a in range(nb_actions):
+        sa = np.append(state,a).reshape(1, -1)
+        Qsa.append(Q.predict(sa))
+    return Qsa
 class ProjectAgentFQ:
-    def load(self, path):
-        self.model = joblib.load(path)
+    def __init__(self, env) -> None:
+        self.nb_actions = env.action_space.n
+    def load(self, paths):
+        self.qfunctions = []
+        for path in paths:
+            self.qfunctions.append(joblib.load(path))
     
     def act(self, observation, use_random=False):
         if use_random:
             return np.random.randint(self.nb_actions)
         else:
-            return greedy_action(self.model, observation, env.action_space.n)
+            actions = 0
+            for model in self.qfunctions:
+                action = predict_state_action(model, observation, nb_actions=self.nb_actions)
+                action = (action - np.min(action))/(np.max(action)-np.min(action)) 
+                actions += action
+            return np.argmax(actions)
+        
     def save(self, path):
         joblib.dump(self.model, path)
 
@@ -152,14 +165,28 @@ class ProjectAgent:
         self.monitoring_nb_trials = config['monitoring_nb_trials'] if 'monitoring_nb_trials' in config.keys() else 0
         self.uncertainty = uncertainty
 
+    # def mlp(self, state_dim, n_action, nb_neurons):
+    #     model = torch.nn.Sequential(torch.nn.Linear(state_dim, nb_neurons),
+    #                                 torch.nn.ReLU(),
+    #                                 torch.nn.Linear(nb_neurons, nb_neurons),
+    #                                 torch.nn.ReLU(), 
+    #                                 torch.nn.Linear(nb_neurons, nb_neurons),
+    #                                 torch.nn.ReLU(), 
+    #                                 torch.nn.Linear(nb_neurons, n_action))
+    #     return model
     def mlp(self, state_dim, n_action, nb_neurons):
         model = torch.nn.Sequential(torch.nn.Linear(state_dim, nb_neurons),
-                                    torch.nn.ReLU(),
+                                    torch.nn.LeakyReLU(),
                                     torch.nn.Linear(nb_neurons, nb_neurons),
-                                    torch.nn.ReLU(), 
+                                    torch.nn.LeakyReLU(),
                                     torch.nn.Linear(nb_neurons, nb_neurons),
-                                    torch.nn.ReLU(), 
-                                    torch.nn.Linear(nb_neurons, n_action))
+                                    torch.nn.LeakyReLU(),
+                                    torch.nn.Linear(nb_neurons, nb_neurons),
+                                    torch.nn.LeakyReLU(),
+                                    torch.nn.Linear(nb_neurons, nb_neurons),
+                                    torch.nn.LeakyReLU(),
+                                    torch.nn.Linear(nb_neurons, n_action),
+                                    )
         return model
 
 
@@ -206,7 +233,8 @@ class ProjectAgent:
         if len(self.memory) > self.batch_size:
             X, A, R, Y, D = self.memory.sample(self.batch_size)
             next_action = self.model(Y).argmax(1).unsqueeze(1)
-            R += self.uncertainty(Y).detach()
+            if self.uncertainty is not None:
+                R += self.uncertainty(Y).detach()
             QYmax = self.target_model(Y).gather(1, next_action).detach()
             update = torch.addcmul(R.unsqueeze(1), (1-D).unsqueeze(1), QYmax, value=self.gamma)
             QXA = self.model(X).gather(1, A.to(torch.long).unsqueeze(1))
@@ -258,7 +286,8 @@ class ProjectAgent:
             # next transition
             step += 1
             if done or trunc:
-              self.uncertainty.observe(next_states)
+              if self.uncertainty is not None:
+                self.uncertainty.observe(next_states)
               if episode_cum_reward > best_episode_return:
                 best_episode_return = episode_cum_reward
                 self.save("best_model.pt")

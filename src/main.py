@@ -20,18 +20,18 @@ def seed_everything(seed: int = 42):
 
 
 if __name__ == "__main__":
-    seed_everything(seed=1)
+    seed_everything(seed=42)
     # Initialization of the agent. Replace DummyAgent with your custom agent implementation.
     # Declare network
 
     env = TimeLimit(
     env=HIVPatient(domain_randomization=False), max_episode_steps=200)
     #uncertainty = RNDUncertainty(400, env)
-    # agent = ProjectAgent(CONFIG, uncertainty)
+    #agent = ProjectAgent(CONFIG)
     # agent.train(env, 10)
-    agent = ProjectAgentFQ()
-    agent.load("best_et_modelbis.joblib")
-    # agent.load(["best_model_batchnorm_25md.pt"])#,)"best_modelbis_25.pt","best_model_norandom_19md.pt","best_model_pretrain_no_random_34md.pt"]) #"best_model_prerandom_1_7.pt"]) #best_modelbis_25.pt", 
+    agent = ProjectAgentFQ(env)
+    agent.load(["model_compressed.joblib"])
+    #agent.load(["best_model_norandom_35md.pt"])#"best_model_batchnorm_25md.pt"])#,)"best_modelbis_25.pt","best_model_norandom_19md.pt","best_model_pretrain_no_random_34md.pt"]) #"best_model_prerandom_1_7.pt"]) #best_modelbis_25.pt", 
 
     # Keep the following lines to evaluate your agent unchanged.
     score_agent: float = evaluate_HIV(agent=agent, nb_episode=1)
